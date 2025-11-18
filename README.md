@@ -34,18 +34,3 @@ Depois acesse `http://localhost:8000` no navegador. A página inicial (`index.ht
 
 ## Contribuição
 Sinta-se à vontade para abrir issues ou enviar pull requests com melhorias, correções de bugs ou novas visualizações.
-
-## Deploy rápido no Azure App Service
-Use o script `scripts/create_azure_webapp.sh` para provisionar o grupo de recursos, o App Service Plan e um Web App Linux já configurado para deploy via pacote (ZIP). Antes de rodar, faça login com `az login` e, se quiser, exporte variáveis para substituir os valores padrão.
-
-```bash
-chmod +x scripts/create_azure_webapp.sh
-RESOURCE_GROUP="rg-gs-cloud-2tsc" \
-LOCATION="brazilsouth" \
-PLAN_NAME="plan-gs-cloud-2tsc" \
-WEBAPP_NAME="webapp-luish-2tsc" \
-RUNTIME="PYTHON:3.12" \
-./scripts/create_azure_webapp.sh
-```
-
-O script aplica app settings recomendadas para sites estáticos (`WEBSITE_RUN_FROM_PACKAGE=1`, `SCM_DO_BUILD_DURING_DEPLOYMENT=false`) e habilita logs de aplicativo e servidor.
