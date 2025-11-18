@@ -6,7 +6,8 @@ const categoryStatsEl = document.getElementById('category-stats');
 const metaEl = document.getElementById('meta');
 const chart = document.getElementById('chart');
 const chartNote = document.getElementById('chart-note');
-const chartColumnSelect = document.getElementById('chart-column');
+const chartColumnXSelect = document.getElementById('chart-column-x');
+const chartColumnYSelect = document.getElementById('chart-column-y');
 const chartTypeSelect = document.getElementById('chart-type');
 const pythonChartBtn = document.getElementById('render-python-chart');
 const pythonChartStatus = document.getElementById('python-chart-status');
@@ -80,7 +81,7 @@ function showData(name, headers, records) {
   renderCategoryStats(summary, records);
   renderChart(numericStats);
   populateColumnOptions(summary);
-  pythonChartStatus.textContent = 'Escolha a coluna e o tipo de gráfico para começar.';
+  pythonChartStatus.textContent = 'Escolha as colunas X, Y e o tipo de gráfico para começar.';
   saveDataset(name, headers, records);
 }
 
@@ -110,25 +111,42 @@ function init() {
 }
 
 function populateColumnOptions(summary) {
-  if (!chartColumnSelect) return;
-  chartColumnSelect.innerHTML = '';
-  const options = [
-    ...summary.numeric.map((col) => ({ value: col, type: 'numeric' })),
-    ...summary.textual.map((col) => ({ value: col, type: 'textual' })),
-  ];
+  if (!chartColumnXSelect || !chartColumnYSelect) return;
+  chartColumnXSelect.innerHTML = '';
+  chartColumnYSelect.innerHTML = '';
 
-  if (!options.length) {
+  const columns = summary.headers.map((col) => ({
+    value: col,
+    type: summary.numeric.includes(col) ? 'numeric' : summary.textual.includes(col) ? 'textual' : 'unknown',
+  }));
+
+  const numericColumns = columns.filter((col) => col.type === 'numeric');
+
+  if (!columns.length) {
     pythonChartStatus.textContent = 'Nenhuma coluna disponível para gerar gráficos.';
     return;
   }
 
-  options.forEach((opt) => {
+  columns.forEach((opt) => {
     const option = document.createElement('option');
     option.value = opt.value;
     option.dataset.type = opt.type;
     option.textContent = `${opt.value} (${opt.type === 'numeric' ? 'numérica' : 'texto'})`;
-    chartColumnSelect.appendChild(option);
+    chartColumnXSelect.appendChild(option);
   });
+
+  numericColumns.forEach((opt) => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.dataset.type = opt.type;
+    option.textContent = `${opt.value} (numérica)`;
+    chartColumnYSelect.appendChild(option);
+  });
+
+  if (!numericColumns.length) {
+    pythonChartStatus.textContent = 'Nenhuma coluna numérica disponível para o eixo Y.';
+    return;
+  }
 }
 
 async function ensurePyodide() {
@@ -186,27 +204,29 @@ encoded
   return `data:image/png;base64,${encoded}`;
 }
 
-function buildNumericSeries(column) {
-  const values = dataset.records
-    .map((row) => Number(row[column]))
-    .filter((v) => !Number.isNaN(v));
-  const limitedValues = values.slice(0, 200);
-  const labels = limitedValues.map((_, idx) => `#${idx + 1}`);
-  return { labels, values: limitedValues };
-}
+function buildXYSeries(columnX, columnY, chartType) {
+  const pairs = dataset.records
+    .map((row) => ({ label: row[columnX], value: Number(row[columnY]) }))
+    .filter((item) => item.label !== undefined && item.label !== null && !Number.isNaN(item.value));
 
-function buildPieSeries(column) {
-  const counts = {};
-  dataset.records.forEach((row) => {
-    const value = row[column] || 'Desconhecido';
-    counts[value] = (counts[value] || 0) + 1;
-  });
-  const pairs = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
+  if (!pairs.length) return { labels: [], values: [] };
+
+  if (chartType === 'pizza') {
+    const totals = new Map();
+    pairs.forEach(({ label, value }) => {
+      const key = String(label) || 'Sem valor';
+      totals.set(key, (totals.get(key) || 0) + value);
+    });
+    const entries = Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+    return { labels: entries.map(([label]) => label), values: entries.map(([, value]) => value) };
+  }
+
+  const limitedPairs = pairs.slice(0, 200);
   return {
-    labels: pairs.map(([label]) => label),
-    values: pairs.map(([, count]) => count),
+    labels: limitedPairs.map(({ label }) => String(label) || 'Sem valor'),
+    values: limitedPairs.map(({ value }) => value),
   };
 }
 
@@ -216,23 +236,25 @@ async function handlePythonChart() {
     return;
   }
 
-  const selectedOption = chartColumnSelect.options[chartColumnSelect.selectedIndex];
+  const selectedX = chartColumnXSelect.options[chartColumnXSelect.selectedIndex];
+  const selectedY = chartColumnYSelect.options[chartColumnYSelect.selectedIndex];
   const chartType = chartTypeSelect.value;
-  if (!selectedOption) {
-    pythonChartStatus.textContent = 'Selecione uma coluna para gerar o gráfico.';
+  if (!selectedX || !selectedY) {
+    pythonChartStatus.textContent = 'Selecione colunas X e Y para gerar o gráfico.';
     return;
   }
 
-  const column = selectedOption.value;
-  const columnType = selectedOption.dataset.type;
+  const columnX = selectedX.value;
+  const columnY = selectedY.value;
+  const columnTypeY = selectedY.dataset.type;
 
-  if (chartType === 'pizza' && columnType !== 'textual') {
-    pythonChartStatus.textContent = 'Escolha uma coluna de texto para gráficos de pizza.';
+  if (chartType === 'pizza' && columnTypeY !== 'numeric') {
+    pythonChartStatus.textContent = 'Escolha uma coluna numérica para Y em gráficos de pizza.';
     return;
   }
 
-  if ((chartType === 'linha' || chartType === 'colunas') && columnType !== 'numeric') {
-    pythonChartStatus.textContent = 'Escolha uma coluna numérica para gráficos de linha ou colunas.';
+  if ((chartType === 'linha' || chartType === 'colunas') && columnTypeY !== 'numeric') {
+    pythonChartStatus.textContent = 'Escolha uma coluna numérica para Y em gráficos de linha ou colunas.';
     return;
   }
 
@@ -240,12 +262,17 @@ async function handlePythonChart() {
   pythonChartImage.style.display = 'none';
 
   try {
-    const series = chartType === 'pizza' ? buildPieSeries(column) : buildNumericSeries(column);
+    const series = buildXYSeries(columnX, columnY, chartType);
     if (!series.values.length) {
       pythonChartStatus.textContent = 'Não há dados suficientes para o gráfico escolhido.';
       return;
     }
-    const src = await renderPythonChart(chartType, series.labels, series.values, `${column} (${chartType})`);
+    const src = await renderPythonChart(
+      chartType,
+      series.labels,
+      series.values,
+      `${columnY} por ${columnX} (${chartType})`
+    );
     pythonChartImage.src = src;
     pythonChartImage.style.display = 'block';
     pythonChartStatus.textContent = 'Gráfico gerado com sucesso.';
